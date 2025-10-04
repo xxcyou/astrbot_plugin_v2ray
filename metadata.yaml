@@ -1,5 +1,5 @@
 name: v2ray_nodes
 desc: 一个用于获取 V2Ray 节点的插件，可以偷节点来用
-version: v1.0.4
+version: v1.0.5
 author: xxcyou
 repo: https://github.com/xxcyou/astrbot_plugin_v2ray
