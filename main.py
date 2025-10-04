@@ -3,11 +3,21 @@ from astrbot.api.star import Context, Star, register
 from astrbot.api import logger, AstrBotConfig
 from .v2ray_node_fetcher import V2RayNodeFetcher
 
-@register("v2ray_nodes", "xxcyou", "一个用于获取 V2Ray 节点的插件", "1.0.4", "https://github.com/xxcyou/astrbot_plugin_v2ray")
+@register("v2ray_nodes", "YourName", "一个用于获取 V2Ray 节点的插件", "1.0.1", "https://github.com/xxcyou/astrbot_plugin_v2ray")
 class MyPlugin(Star):
-    def __init__(self, context: Context, config: AstrBotConfig = None):
+    def __init__(self, context: Context, *args, **kwargs):
         super().__init__(context)
         self.node_fetcher = V2RayNodeFetcher()
+        
+        # 安全地处理配置参数
+        self.config = None
+        if args:
+            for arg in args:
+                if isinstance(arg, AstrBotConfig):
+                    self.config = arg
+                    break
+        elif 'config' in kwargs:
+            self.config = kwargs['config']
 
     async def initialize(self):
         """可选择实现异步的插件初始化方法，当实例化该插件类之后会自动调用该方法。"""
