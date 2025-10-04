@@ -193,7 +193,7 @@ class V2RayNodeFetcher:
         
         # 缓存过期或无缓存，重新获取数据
         logger.info("重新获取节点数据")
-        subscription_url = 'https://raw.githubusercontent.com/a2470982985/getNode/main/v2ray.txt'
+        subscription_url = 'https://gh.y4cc.cc/gh/https://raw.githubusercontent.com/a2470982985/getNode/main/v2ray.txt'
         
         # 1. 获取订阅
         logger.info(f"正在获取订阅: {subscription_url}")
