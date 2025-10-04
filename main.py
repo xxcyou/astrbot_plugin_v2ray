@@ -4,7 +4,7 @@ from astrbot.api import logger, AstrBotConfig
 from .v2ray_node_fetcher import V2RayNodeFetcher
 import traceback
 
-@register("v2ray_nodes", "xxcyou", "一个用于获取 V2Ray 节点的插件", "1.0.7", "https://github.com/xxcyou/astrbot_plugin_v2ray")
+@register("v2ray_nodes", "xxcyou", "一个用于获取 V2Ray 节点的插件", "1.0.9", "https://github.com/xxcyou/astrbot_plugin_v2ray")
 class MyPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
         super().__init__(context)
@@ -25,6 +25,27 @@ class MyPlugin(Star):
         if not self.is_tool_enabled:
             logger.warning("V2Ray节点工具当前已被禁用，将不会注册函数工具。")
     
+    @filter.command("test_node")
+    async def test_node_command(self, event: AstrMessageEvent) -> MessageEventResult:
+        """测试节点获取功能的指令"""
+        try:
+            logger.info("收到测试节点指令")
+            # 获取一个随机可用节点
+            node = await self.node_fetcher.get_random_node()
+            
+            if not node:
+                logger.error("测试时无法获取可用节点")
+                return event.plain_result("❌ 测试时无法获取可用节点")
+            
+            # 格式化节点信息
+            msg = self.node_fetcher.format_node_message(node)
+            logger.info(f"测试成功获取节点: {node.get('ps', 'N/A')}")
+            return event.plain_result("[测试成功]\n" + msg)
+        except Exception as e:
+            logger.error(f"测试节点时出错: {e}")
+            logger.error(f"错误详情: {traceback.format_exc()}")
+            return event.plain_result(f"⚠️ 测试时出现异常: {e}")
+
     # 注册 MCP 工具的装饰器。当用户需要节点或者偷群主节点时调用此函数。
     @filter.llm_tool(name="steal_node", description="偷节点来用")
     async def steal_node_tool(self, event: AstrMessageEvent) -> MessageEventResult:

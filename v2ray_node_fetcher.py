@@ -30,39 +30,64 @@ class V2RayNodeFetcher:
                         return content
                     else:
                         logger.warning(f"⚠️ 无法获取订阅内容，状态码: {response.status}")
+                        # 尝试读取错误响应内容
+                        error_content = await response.text()
+                        logger.warning(f"错误响应内容: {error_content[:200]}...")
         except Exception as e:
             logger.error(f"⚠️ 无法获取订阅内容，请检查网络: {e}")
+            logger.error(f"错误详情: {type(e).__name__}: {str(e)}")
         return None
 
     def decode_subscription(self, raw_data: str) -> List[str]:
         """解码Base64订阅内容"""
         try:
             logger.info("正在解码订阅内容...")
-            decoded_data = base64.b64decode(raw_data).decode('utf-8')
+            # 尝试不同的解码方式
+            try:
+                decoded_data = base64.b64decode(raw_data).decode('utf-8')
+            except Exception:
+                # 如果标准解码失败，尝试URL安全的解码
+                decoded_data = base64.urlsafe_b64decode(raw_data).decode('utf-8')
+            
             lines = decoded_data.splitlines()
             # 只保留vmess://开头的行
             vmess_lines = [line for line in lines if line.startswith('vmess://')]
             logger.info(f"解码完成，找到 {len(vmess_lines)} 个节点")
+            
+            # 显示前几个节点作为示例
+            for i, line in enumerate(vmess_lines[:3]):
+                logger.info(f"节点 {i+1}: {line[:50]}...")
+                
             return vmess_lines
         except Exception as e:
             logger.error(f"⚠️ 订阅解码失败: {e}")
+            logger.error(f"原始数据前100字符: {raw_data[:100]}")
         return []
 
-    async def check_host_connectivity(self, host: str, port: int = 80, timeout: int = 3) -> bool:
+    async def check_host_connectivity(self, host: str, port: int = 80, timeout: int = 5) -> bool:
         """检查主机连通性（使用TCP连接而不是ping）"""
+        logger.info(f"开始检查主机连通性: {host}:{port} (超时: {timeout}s)")
+        
         try:
-            # 创建一个TCP连接来检查主机是否可达
+            # 增加超时时间并添加更多调试信息
             future = asyncio.open_connection(host, port)
             reader, writer = await asyncio.wait_for(future, timeout=timeout)
             writer.close()
             await writer.wait_closed()
-            logger.info(f"连接 {host}:{port} 成功")
+            logger.info(f"✅ 连接 {host}:{port} 成功")
             return True
         except asyncio.TimeoutError:
-            logger.warning(f"连接 {host}:{port} 超时")
+            logger.warning(f"❌ 连接 {host}:{port} 超时 ({timeout}s)")
+            return False
+        except ConnectionRefusedError:
+            logger.warning(f"❌ 连接 {host}:{port} 被拒绝")
+            return False
+        except socket.gaierror as e:
+            logger.warning(f"❌ DNS解析失败 {host}: {e}")
             return False
         except Exception as e:
-            logger.warning(f"连接 {host}:{port} 失败: {e}")
+            logger.warning(f"❌ 连接 {host}:{port} 失败: {e}")
+            logger.warning(f"错误类型: {type(e).__name__}")
             return False
 
     async def check_node_validity(self, node_lines: List[str]) -> List[Dict]:
@@ -70,8 +95,15 @@ class V2RayNodeFetcher:
         logger.info(f"开始检查 {len(node_lines)} 个节点的可用性...")
         valid_nodes = []
         
+        # 如果节点数量太多，只检查前30个
+        if len(node_lines) > 30:
+            logger.info(f"节点数量较多({len(node_lines)}个)，只检查前30个")
+            node_lines = node_lines[:30]
+        
         # 创建并发任务
         tasks = []
+        node_details = []  # 存储节点详细信息用于调试
+        
         for i, line in enumerate(node_lines):
             try:
                 # 提取并解码节点信息
@@ -81,15 +113,24 @@ class V2RayNodeFetcher:
                 # 获取端口号，如果没有则默认使用80
                 port = int(node_data.get('port', 80))
                 
-                # 添加连通性检查任务
-                tasks.append((node_data, self.check_host_connectivity(node_data['add'], port)))
+                # 保存节点详细信息用于调试
+                node_info = {
+                    'index': i,
+                    'name': node_data.get('ps', 'N/A'),
+                    'host': node_data.get('add', 'N/A'),
+                    'port': port
+                }
+                node_details.append(node_info)
                 
-                # 限制并发数量，避免过多的连接请求
-                if i >= 20:  # 只检查前20个节点
-                    logger.info("达到最大检查节点数限制(20个)，跳过剩余节点")
-                    break
+                # 添加连通性检查任务
+                tasks.append((node_data, self.check_host_connectivity(node_data['add'], port, 5)))
+                
+                # 显示节点信息
+                logger.info(f"准备检查节点 {i+1}/{len(node_lines)}: {node_info['name']} ({node_info['host']}:{node_info['port']})")
+                
             except Exception as e:
                 logger.warning(f"解析第 {i+1} 个节点失败: {e}")
+                logger.warning(f"节点数据: {line[:100]}...")
                 # 解析失败直接跳过
                 continue
         
@@ -105,11 +146,15 @@ class V2RayNodeFetcher:
         for i, (node_data, _) in enumerate(tasks):
             if i < len(check_results):
                 result = check_results[i]
+                node_info = node_details[i] if i < len(node_details) else {'name': 'Unknown'}
+                
                 if result is True:
                     valid_nodes.append(node_data)
-                    logger.info(f"节点 {node_data.get('ps', 'N/A')} 可用")
+                    logger.info(f"✅ 节点 {node_info['name']} 可用")
                 elif isinstance(result, Exception):
-                    logger.warning(f"节点 {node_data.get('ps', 'N/A')} 检查时出现异常: {result}")
+                    logger.warning(f"❌ 节点 {node_info['name']} 检查时出现异常: {result}")
+                else:
+                    logger.warning(f"❌ 节点 {node_info['name']} 不可用")
                 
         logger.info(f"检查完成，找到 {len(valid_nodes)} 个可用节点")
         return valid_nodes
@@ -122,11 +167,16 @@ class V2RayNodeFetcher:
         # 检查缓存是否在有效期内（1小时）
         is_valid = (time.time() - self.cache_timestamp) < self.cache_duration
         logger.info(f"缓存有效性检查: {'有效' if is_valid else '已过期'}")
+        if not is_valid:
+            logger.info(f"缓存时间戳: {self.cache_timestamp}, 当前时间: {time.time()}")
         return is_valid
 
     async def get_random_node(self) -> Optional[Dict]:
         """获取一个随机可用节点，带缓存机制"""
+        logger.info("=" * 50)
         logger.info("开始获取随机节点...")
+        logger.info("=" * 50)
+        
         # 检查缓存
         if self.is_cache_valid():
             logger.info("使用缓存的节点数据")
@@ -134,9 +184,11 @@ class V2RayNodeFetcher:
             if self.node_cache:
                 selected_node = random.choice(self.node_cache)
                 logger.info(f"从缓存中选择节点: {selected_node.get('ps', 'N/A')}")
+                logger.info("=" * 50)
                 return selected_node
             else:
                 logger.warning("缓存为空")
+                logger.info("=" * 50)
                 return None
         
         # 缓存过期或无缓存，重新获取数据
@@ -144,21 +196,37 @@ class V2RayNodeFetcher:
         subscription_url = 'https://raw.githubusercontent.com/a2470982985/getNode/main/v2ray.txt'
         
         # 1. 获取订阅
+        logger.info(f"正在获取订阅: {subscription_url}")
         raw_data = await self.fetch_subscription(subscription_url)
         if not raw_data:
-            logger.error("无法获取订阅数据")
+            logger.error("❌ 无法获取订阅数据")
+            logger.info("=" * 50)
             return None
             
         # 2. 解码订阅
+        logger.info("正在解码订阅数据...")
         node_lines = self.decode_subscription(raw_data)
         if not node_lines:
             logger.warning("⚠️ 未找到有效节点")
+            logger.info("=" * 50)
             return None
             
         # 3. 检查节点可用性
+        logger.info(f"开始检查 {len(node_lines)} 个节点的可用性...")
         valid_nodes = await self.check_node_validity(node_lines)
         if not valid_nodes:
             logger.error("❌ 当前没有可用节点")
+            # 显示一些调试信息
+            logger.info("原始节点数量: %d", len(node_lines))
+            logger.info("显示前3个原始节点:")
+            for i, line in enumerate(node_lines[:3]):
+                try:
+                    base64_content = line.replace('vmess://', '')
+                    node_data = json.loads(base64.b64decode(base64_content).decode('utf-8'))
+                    logger.info(f"  节点 {i+1}: {node_data.get('ps', 'N/A')} ({node_data.get('add', 'N/A')}:{node_data.get('port', 'N/A')})")
+                except Exception as e:
+                    logger.warning(f"  节点 {i+1} 解析失败: {e}")
+            logger.info("=" * 50)
             return None
             
         # 4. 缓存有效节点和时间戳
@@ -169,6 +237,7 @@ class V2RayNodeFetcher:
         # 5. 随机返回一个节点
         selected_node = random.choice(valid_nodes)
         logger.info(f"选择节点: {selected_node.get('ps', 'N/A')}")
+        logger.info("=" * 50)
         return selected_node
 
     def format_node_message(self, node: Dict) -> str:
