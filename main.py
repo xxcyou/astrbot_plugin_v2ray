@@ -3,7 +3,7 @@ from astrbot.api.star import Context, Star, register
 from astrbot.api import logger, AstrBotConfig
 from .v2ray_node_fetcher import V2RayNodeFetcher
 
-@register("v2ray_nodes", "YourName", "一个用于获取 V2Ray 节点的插件", "1.0.1", "https://github.com/xxcyou/astrbot_plugin_v2ray")
+@register("v2ray_nodes", "xxcyou", "一个用于获取 V2Ray 节点的插件", "1.0.6", "https://github.com/xxcyou/astrbot_plugin_v2ray")
 class MyPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
         super().__init__(context)
