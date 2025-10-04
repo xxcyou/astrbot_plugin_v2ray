@@ -1,0 +1,8 @@
+{
+  "enable_node_tool": {
+    "description": "是否启用可供LLM调用的节点获取工具。禁用后，LLM将无法使用此功能。",
+    "type": "bool",
+    "default": true,
+    "hint": "开启后，LLM可以根据用户需求自主决定是否提供V2Ray节点。"
+  }
+}
