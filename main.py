@@ -4,7 +4,7 @@ from astrbot.api import logger, AstrBotConfig
 from .v2ray_node_fetcher import V2RayNodeFetcher
 import traceback
 
-@register("v2ray_nodes", "xxcyou", "一个用于获取 V2Ray 节点的插件", "1.0.10", "https://github.com/xxcyou/astrbot_plugin_v2ray")
+@register("v2ray_nodes", "xxcyou", "一个用于获取 V2Ray 节点的插件", "1.0.11", "https://github.com/xxcyou/astrbot_plugin_v2ray")
 class MyPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
         super().__init__(context)
@@ -20,7 +20,7 @@ class MyPlugin(Star):
     async def initialize(self):
         """可选择实现异步的插件初始化方法，当实例化该插件类之后会自动调用该方法。"""
         logger.info("V2Ray节点工具插件已加载。")
-        logger.info(f" - 工具启用状态: {self.is_tool_enabled}")
+        logger.info(f"工具启用状态: {self.is_tool_enabled}")
         
         if not self.is_tool_enabled:
             logger.warning("V2Ray节点工具当前已被禁用，将不会注册函数工具。")
@@ -43,7 +43,6 @@ class MyPlugin(Star):
             return event.plain_result("[测试成功]\n" + msg)
         except Exception as e:
             logger.error(f"测试节点时出错: {e}")
-            logger.error(f"错误详情: {traceback.format_exc()}")
             return event.plain_result(f"⚠️ 测试时出现异常: {e}")
 
     # 注册 MCP 工具的装饰器。当用户需要节点或者偷群主节点时调用此函数。
@@ -73,7 +72,6 @@ class MyPlugin(Star):
             return event.plain_result(msg)
         except Exception as e:
             logger.error(f"获取节点时出错: {e}")
-            logger.error(f"错误详情: {traceback.format_exc()}")
             return event.plain_result("⚠️ 脚本执行异常，已捕获")
 
     async def terminate(self):
