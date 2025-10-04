@@ -6,7 +6,7 @@ import time
 import random
 from typing import List, Dict, Optional
 import aiohttp
-import subprocess
+import socket
 import platform
 
 class V2RayNodeFetcher:
@@ -47,26 +47,21 @@ class V2RayNodeFetcher:
             print(f"⚠️ 订阅解码失败: {e}")
         return []
 
-    async def ping_host(self, host: str) -> bool:
-        """Ping主机检查连通性"""
+    async def check_host_connectivity(self, host: str, port: int = 80, timeout: int = 3) -> bool:
+        """检查主机连通性（使用TCP连接而不是ping）"""
         try:
-            # 根据操作系统选择ping命令
-            if platform.system().lower() == "windows":
-                cmd = ["ping", "-n", "1", "-w", "2000", host]  # Windows: -w 2000ms超时
-            else:
-                cmd = ["ping", "-c", "1", "-W", "2", host]     # Unix/Linux: -W 2s超时
-            
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
-            )
-            await process.communicate()
-            result = process.returncode == 0
-            print(f"Ping {host}: {'成功' if result else '失败'}")
-            return result
+            # 创建一个TCP连接来检查主机是否可达
+            future = asyncio.open_connection(host, port)
+            reader, writer = await asyncio.wait_for(future, timeout=timeout)
+            writer.close()
+            await writer.wait_closed()
+            print(f"连接 {host}:{port} 成功")
+            return True
+        except asyncio.TimeoutError:
+            print(f"连接 {host}:{port} 超时")
+            return False
         except Exception as e:
-            print(f"Ping {host} 失败: {e}")
+            print(f"连接 {host}:{port} 失败: {e}")
             return False
 
     async def check_node_validity(self, node_lines: List[str]) -> List[Dict]:
@@ -81,8 +76,14 @@ class V2RayNodeFetcher:
                 # 提取并解码节点信息
                 base64_content = line.replace('vmess://', '')
                 node_data = json.loads(base64.b64decode(base64_content).decode('utf-8'))
-                tasks.append((node_data, self.ping_host(node_data['add'])))
-                # 限制并发数量，避免过多的ping请求
+                
+                # 获取端口号，如果没有则默认使用80
+                port = int(node_data.get('port', 80))
+                
+                # 添加连通性检查任务
+                tasks.append((node_data, self.check_host_connectivity(node_data['add'], port)))
+                
+                # 限制并发数量，避免过多的连接请求
                 if i >= 20:  # 只检查前20个节点
                     print("达到最大检查节点数限制(20个)，跳过剩余节点")
                     break
@@ -95,14 +96,14 @@ class V2RayNodeFetcher:
             print("没有有效的节点任务需要检查")
             return []
         
-        print(f"开始并发ping {len(tasks)} 个节点...")
-        # 并发执行ping检查
-        ping_results = await asyncio.gather(*[task[1] for task in tasks], return_exceptions=True)
+        print(f"开始并发检查 {len(tasks)} 个节点...")
+        # 并发执行连通性检查
+        check_results = await asyncio.gather(*[task[1] for task in tasks], return_exceptions=True)
         
         # 收集可用节点
         for i, (node_data, _) in enumerate(tasks):
-            if i < len(ping_results):
-                result = ping_results[i]
+            if i < len(check_results):
+                result = check_results[i]
                 if result is True:
                     valid_nodes.append(node_data)
                     print(f"节点 {node_data.get('ps', 'N/A')} 可用")
